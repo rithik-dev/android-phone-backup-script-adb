@@ -1,3 +1,6 @@
 """Fast incremental Android media backup over ADB."""
 
-__version__ = "1.0.0"
+from .config import PROJECT_NAME, PROJECT_URL, VERSION
+
+__version__ = VERSION
+__all__ = ["PROJECT_NAME", "PROJECT_URL", "VERSION", "__version__"]

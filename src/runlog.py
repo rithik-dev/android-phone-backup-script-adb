@@ -3,6 +3,7 @@
 import datetime
 import threading
 
+from .config import PROJECT_NAME, PROJECT_URL, VERSION
 from .formatting import human_bytes, human_time
 
 # IST has no daylight saving, so a fixed offset is exact and needs no tz data.
@@ -43,6 +44,8 @@ class RunLog:
             "# Device    : %s" % serial,
             "# Snapshot  : %s" % snapshot_name,
             "# Started   : %s" % full_stamp(self.started),
+            "# Tool      : %s v%s" % (PROJECT_NAME, VERSION),
+            "# Source    : %s" % PROJECT_URL,
             RULE,
             "",
         ]) + "\n")

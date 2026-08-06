@@ -1,5 +1,9 @@
 """Tunable constants shared across the package."""
 
+VERSION = "1.0.0"
+PROJECT_NAME = "android-phone-backup-script-adb"
+PROJECT_URL = "https://github.com/rithik-dev/android-phone-backup-script-adb"
+
 SDCARD = "/sdcard"
 
 # Storage roots to back up, relative to shared storage. Missing ones are skipped.

@@ -108,6 +108,8 @@ time it happened:
 # Device    : R5CT21KF3TD
 # Snapshot  : Android_Backup_20260806_104249
 # Started   : Thu 06 Aug 2026, 10:42:49 IST
+# Tool      : android-phone-backup-script-adb v1.0.0
+# Source    : https://github.com/rithik-dev/android-phone-backup-script-adb
 # ====================================================================
 
 10:42:49  FETCH  Documents/Aadhar.pdf	1130377
@@ -118,7 +120,8 @@ time it happened:
 # Duration   : 00:01
 # Result     : complete
 # Transferred: 15.6 MB (12.4 MB/s average)
-# Reused     : 0 files, 0 B
+# Hardlinked : 0 files, 0 B (no disk space used)
+# Copied     : 0 files, 0 B (volume cannot hardlink)
 # Failed     : 0 files
 # ====================================================================
 ```
