@@ -33,6 +33,8 @@ class Progress:
         self.wire_bytes = 0
         self.linked_files = 0
         self.linked_bytes = 0
+        self.copied_files = 0
+        self.copied_bytes = 0
         # Bytes read for a file still in flight, keyed by transfer stream.
         # Without this the bar sits still for a minute on a large video.
         self.inflight = {}
@@ -49,6 +51,14 @@ class Progress:
         self._stop = threading.Event()
         self._thread = None
         self._line_length = 0
+
+    @property
+    def reused_files(self):
+        return self.linked_files + self.copied_files
+
+    @property
+    def reused_bytes(self):
+        return self.linked_bytes + self.copied_bytes
 
     # -- lifecycle ---------------------------------------------------------
 
@@ -89,15 +99,21 @@ class Progress:
             self.emit("  %s  %s" % (remote.relpath, human_bytes(remote.size)))
         self._announce_if_folder_done(remote.root)
 
-    def file_linked(self, remote):
+    def file_reused(self, remote, copied=False):
+        """Record a file taken from the previous snapshot. A hardlink costs no
+        disk space; a copy is the fallback when linking is not possible."""
         with self.lock:
             self.done_files += 1
             self.done_bytes += remote.size
-            self.linked_files += 1
-            self.linked_bytes += remote.size
+            if copied:
+                self.copied_files += 1
+                self.copied_bytes += remote.size
+            else:
+                self.linked_files += 1
+                self.linked_bytes += remote.size
             self._credit_folder(remote)
             self.current = remote.relpath
-        self._log("LINK", remote)
+        self._log("COPY" if copied else "LINK", remote)
         self._announce_if_folder_done(remote.root)
 
     def file_failed(self, relpath, reason):

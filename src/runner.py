@@ -14,7 +14,7 @@ from .platform_hints import free_space_hint
 from .progress import Progress
 from .runlog import RunLog
 from .scan import DeviceScanner
-from .snapshot import BackupPlan, SnapshotStore, hardlink_files
+from .snapshot import BackupPlan, SnapshotStore, reuse_files
 from .transfer import TransferEngine
 
 EXIT_OK = 0
@@ -108,8 +108,8 @@ class BackupRunner:
         print("To transfer : %d files, %s"
               % (len(plan.to_fetch), human_bytes(plan.fetch_bytes)))
         if plan.to_link:
-            print("Reusing     : %d files, %s (hardlinked from previous snapshot)"
-                  % (len(plan.to_link), human_bytes(plan.link_bytes)))
+            print("Reusing     : %d files, %s (from the previous snapshot, "
+                  "no transfer)" % (len(plan.to_link), human_bytes(plan.link_bytes)))
         if plan.present:
             print("Already here: %d files, %s"
                   % (len(plan.present), human_bytes(plan.present_bytes)))
@@ -149,7 +149,7 @@ class BackupRunner:
         failed = []
         try:
             to_fetch = list(plan.to_fetch)
-            to_fetch += hardlink_files(plan.to_link, dest, progress)
+            to_fetch += reuse_files(plan.to_link, dest, progress)
             engine = TransferEngine(self.adb, dest, progress, cancel,
                                     jobs=self.options.jobs)
             failed = engine.run(to_fetch)
@@ -167,8 +167,10 @@ class BackupRunner:
             outcome = "%d files failed, snapshot incomplete" % len(failed)
         else:
             outcome = "complete"
-        log.finish(outcome, progress.done_bytes - progress.linked_bytes,
-                   progress.linked_files, progress.linked_bytes, len(failed))
+        log.finish(outcome, progress.done_bytes - progress.reused_bytes,
+                   linked=(progress.linked_files, progress.linked_bytes),
+                   copied=(progress.copied_files, progress.copied_bytes),
+                   failed_files=len(failed))
         log.close()
 
         if cancel.is_set():
@@ -188,7 +190,7 @@ class BackupRunner:
 
     def _report_summary(self, dest, scan, progress, failed, elapsed):
         totals = scan.folder_totals()
-        moved = progress.done_bytes - progress.linked_bytes
+        moved = progress.done_bytes - progress.reused_bytes
 
         print("\n" + RULE)
         print("Summary")
@@ -204,8 +206,12 @@ class BackupRunner:
               % (human_bytes(moved), human_time(elapsed),
                  human_bytes(moved / elapsed if elapsed else 0)))
         if progress.linked_files:
-            print("  Reused           : %d files, %s (no transfer needed)"
+            print("  Hardlinked       : %d files, %s (no transfer, no disk used)"
                   % (progress.linked_files, human_bytes(progress.linked_bytes)))
+        if progress.copied_files:
+            print("  Copied           : %d files, %s (this volume cannot "
+                  "hardlink, so the space is used again)"
+                  % (progress.copied_files, human_bytes(progress.copied_bytes)))
         if failed:
             print("  Failed           : %d files (listed in the log)"
                   % len(failed))

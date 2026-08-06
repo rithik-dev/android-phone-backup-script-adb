@@ -128,7 +128,8 @@ The tag on each line tells you what actually happened:
 | Tag | Meaning |
 | --- | --- |
 | `FETCH` | Transferred from the device |
-| `LINK` | Hardlinked from the previous snapshot, nothing transferred |
+| `LINK` | Hardlinked from the previous snapshot: no transfer, no disk space |
+| `COPY` | Copied from the previous snapshot: no transfer, but disk space used, because the destination volume cannot hardlink |
 | `FAIL` | Did not arrive, with the reason |
 
 A resumed run appends rather than overwriting, so a single log can hold several
@@ -202,9 +203,9 @@ To confirm a run reused rather than re-downloaded, check any of these:
 cd ~/Downloads/Android\ Backups
 
 # the run summary said so
-grep -E "Transferred|Reused" */backup.log
+grep -E "Transferred|Hardlinked|Copied" */backup.log
 
-# every line tagged LINK means hardlinked, FETCH means transferred
+# every line tagged LINK is hardlinked, COPY is copied, FETCH came off the phone
 grep -c LINK  Android_Backup_*/backup.log
 
 # apparent size versus real size on disk
@@ -214,6 +215,82 @@ du -sh  .    # what the snapshots actually occupy together
 
 If the second number is close to the first divided by the number of snapshots,
 hardlinking is working.
+
+## How hardlinks work
+
+This is the part that surprises people, so it is worth being precise.
+
+A file name and a file's contents are two different things. The contents live
+somewhere on disk, and a name is just a pointer to them. A **hardlink** is a
+second name pointing at the same contents. Not a copy, not a shortcut, not an
+alias. There is exactly one copy of the bytes, reachable through two names, and
+neither name is more "real" than the other.
+
+So when the second backup reuses a photo:
+
+```
+Android_Backup_...094547/DCIM/Camera/x.jpg  ─┐
+                                             ├─►  the actual 3 MB of photo
+Android_Backup_...104650/DCIM/Camera/x.jpg  ─┘
+```
+
+One 3 MB allocation, two names. This is why:
+
+- **Every snapshot looks complete in Finder**, because it is complete. Each
+  timestamped folder contains every file that was on the phone at that moment.
+- **Ten snapshots of an 80 GB phone do not use 800 GB.** They use 80 GB plus
+  whatever actually changed. The photos you never touched exist once.
+- **Deleting an old snapshot is safe and frees almost nothing.** Removing a name
+  only frees the contents when the last name pointing at them is gone. Delete
+  the oldest backup and the newer ones are untouched, because they hold their
+  own names to the same data.
+- **You can restore from any single snapshot** without needing the others.
+
+The one thing to know: because the names share contents, **editing a file inside
+one snapshot edits it in all of them.** Deleting is fine, renaming is fine,
+editing in place is not. Treat snapshots as read only, which is what you want
+from a backup anyway.
+
+To see it yourself, the link count is how many names point at the contents:
+
+```bash
+stat -f "links=%l  %N" ~/Downloads/Android\ Backups/*/DCIM/Camera/*.jpg | head
+```
+
+`links=1` means one name, `links=3` means three snapshots share that file.
+
+### When hardlinks are not possible
+
+Hardlinks are a filesystem feature. APFS and HFS+ (your Mac's internal disk)
+support them. **exFAT does not**, and exFAT is the common format for portable
+drives, so this matters when backing up to an external disk.
+
+When linking fails, the file is copied from the previous snapshot instead. That
+still avoids re-downloading it over USB, which is the slow part, but the space
+is genuinely used again, so ten snapshots really would cost ten times the space.
+The run tells you which happened:
+
+```
+  Hardlinked       : 10661 files, 78.9 GB (no transfer, no disk used)
+  Copied           : 0 files, 0 B
+```
+
+and the log tags each line `LINK` or `COPY`. If you see large `Copied` numbers,
+your destination drive is probably exFAT. Reformatting it as APFS or Mac OS
+Extended restores hardlinking, at the cost of the drive no longer being readable
+on Windows.
+
+### Copying snapshots elsewhere
+
+A plain `cp -R` of the backup root expands every hardlink into a real copy, so
+80 GB of snapshots can balloon into hundreds of gigabytes. To move them while
+keeping the sharing intact:
+
+```bash
+rsync -aH ~/Downloads/Android\ Backups/ /Volumes/Other/Android\ Backups/
+```
+
+The `-H` is what preserves hardlinks. Without it you get the expansion.
 
 Modification times are compared with a two second tolerance. Tar stores whole
 seconds while `find` reports nanoseconds, so an exact comparison would flag every

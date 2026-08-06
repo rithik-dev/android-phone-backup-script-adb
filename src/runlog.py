@@ -54,8 +54,8 @@ class RunLog:
         self._write("%s  %-5s  %s\t%s\n" % (clock(now()), "FAIL", relpath, reason))
         self.flush()
 
-    def finish(self, outcome, moved_bytes, reused_files, reused_bytes,
-               failed_files):
+    def finish(self, outcome, moved_bytes, linked, copied, failed_files):
+        """linked and copied are (file count, byte count) pairs."""
         ended = now()
         elapsed = (ended - self.started).total_seconds() if self.started else 0.0
         rate = moved_bytes / elapsed if elapsed else 0
@@ -66,8 +66,10 @@ class RunLog:
             "# Result     : %s" % outcome,
             "# Transferred: %s (%s/s average)"
             % (human_bytes(moved_bytes), human_bytes(rate)),
-            "# Reused     : %d files, %s" % (reused_files,
-                                             human_bytes(reused_bytes)),
+            "# Hardlinked : %d files, %s (no disk space used)"
+            % (linked[0], human_bytes(linked[1])),
+            "# Copied     : %d files, %s (volume cannot hardlink)"
+            % (copied[0], human_bytes(copied[1])),
             "# Failed     : %d files" % failed_files,
             RULE,
             "",

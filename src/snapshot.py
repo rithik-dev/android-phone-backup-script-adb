@@ -14,6 +14,23 @@ def mtime_matches(a, b):
     return abs(a - b) < MTIME_TOLERANCE
 
 
+def _linking_unsupported_errnos():
+    """Errors meaning "this file cannot be hardlinked", so copy instead.
+
+    exFAT, the usual format on portable drives, has no hardlinks at all and
+    reports ENOTSUP. Treating that as a failure would re-download everything.
+    """
+    codes = {errno.EXDEV, errno.EMLINK, errno.EPERM}
+    for name in ("ENOTSUP", "EOPNOTSUPP", "ENOSYS", "EACCES"):
+        code = getattr(errno, name, None)
+        if code is not None:
+            codes.add(code)
+    return codes
+
+
+LINK_UNSUPPORTED = _linking_unsupported_errnos()
+
+
 class Snapshot:
     """One timestamped backup directory."""
 
@@ -191,27 +208,33 @@ class BackupPlan:
         return source if os.path.exists(source) else None
 
 
-def hardlink_files(to_link, dest, progress):
-    """Reuse the previous snapshot's data. Returns files that must be fetched
-    instead, for example when the snapshots sit on different filesystems."""
+def reuse_files(to_link, dest, progress):
+    """Reuse the previous snapshot's data, by hardlink where possible.
+
+    A hardlink is a second name for bytes already on disk, so it costs no space.
+    Copying is the fallback when the two snapshots are on different filesystems,
+    where a link cannot span the boundary. Returns the files that neither
+    worked for, so they can be fetched from the device instead.
+    """
     failed = []
     for remote, source in to_link:
         target = dest.local_path(remote.relpath)
         os.makedirs(os.path.dirname(target), exist_ok=True)
         if os.path.exists(target):
-            progress.file_linked(remote)
+            progress.file_reused(remote)
             continue
         try:
             os.link(source, target)
         except OSError as exc:
-            if exc.errno in (errno.EXDEV, errno.EMLINK, errno.EPERM):
-                try:
-                    shutil.copy2(source, target)
-                except OSError:
-                    failed.append(remote)
-                    continue
-            else:
+            if exc.errno not in LINK_UNSUPPORTED:
                 failed.append(remote)
                 continue
-        progress.file_linked(remote)
+            try:
+                shutil.copy2(source, target)
+            except OSError:
+                failed.append(remote)
+                continue
+            progress.file_reused(remote, copied=True)
+            continue
+        progress.file_reused(remote)
     return failed
