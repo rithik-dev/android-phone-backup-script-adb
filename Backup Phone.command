@@ -2,7 +2,7 @@
 #
 # Double click this file in Finder to run a backup.
 #
-# To always back up somewhere other than ~/Downloads/Android Backups, put the
+# To always back up somewhere other than ~/Documents/Android Backups, put the
 # path between the quotes below, for example:
 #     DEST="/Volumes/MyDrive/Android Backups"
 #

@@ -72,7 +72,7 @@ python3 index.py --dry-run
 By default:
 
 ```
-~/Downloads/Android Backups/
+~/Documents/Android Backups/
     Android_Backup_20260806_094547/
         DCIM/Camera/20250726_172955.jpg
         Android/media/com.whatsapp/...
@@ -92,6 +92,42 @@ environment to change the default permanently:
 ```bash
 python3 index.py --dest "/Volumes/MyDrive/Android Backups"
 ```
+
+### How the default is found on each system
+
+There is no single path that means "documents" everywhere, so it is resolved at
+run time:
+
+| System | How it is found |
+| --- | --- |
+| macOS | `~/Documents` |
+| Windows | The `Personal` entry in the registry under `Explorer\User Shell Folders`, because Windows lets this folder be relocated and OneDrive frequently does move it. Falls back to `%USERPROFILE%\Documents`. |
+| Linux and BSD | `$XDG_DOCUMENTS_DIR`, then `XDG_DOCUMENTS_DIR` in `~/.config/user-dirs.dirs`. This is what carries localized names, so a German desktop correctly resolves to `~/Dokumente`. Falls back to `~/Documents`. |
+
+If the resolved folder does not exist, which is common on minimal Linux installs
+and on systems with no desktop environment, the backup root becomes
+`~/Android Backups` instead. A documents folder is never created just to hold
+backups. Run `python3 index.py --help` to see the path your system resolves to.
+
+### A warning about synced folders
+
+Documents is also the folder most likely to be synced to the cloud: iCloud Drive
+on macOS when Desktop and Documents syncing is on, and OneDrive on Windows,
+which redirects it by default on many machines. Backing up a phone into a synced
+folder means every photo gets uploaded, which is slow, and on a large library
+will exhaust the cloud quota.
+
+The run checks for this and says so before transferring anything:
+
+```
+Destination : /Users/you/Library/Mobile Documents/.../Android Backups/Android_Backup_...
+Warning     : this destination is inside iCloud Drive, which will try to upload
+              every backed up file. Pass --dest to use a local folder or an
+              external drive instead.
+```
+
+iCloud Drive, OneDrive, Dropbox and Google Drive are all recognised. If you see
+that warning, point `--dest` at a local folder or an external drive.
 
 Two files are written into every snapshot:
 
@@ -143,7 +179,7 @@ a footer too, recorded as `interrupted, snapshot incomplete`.
 
 | Option | Description |
 | --- | --- |
-| `--dest PATH` | Backup root. Each run creates a timestamped snapshot inside it. Defaults to `$ANDROID_BACKUP_DEST`, otherwise `~/Downloads/Android Backups`. |
+| `--dest PATH` | Backup root. Each run creates a timestamped snapshot inside it. Defaults to `$ANDROID_BACKUP_DEST`, otherwise the `Android Backups` folder in your documents directory. |
 | `--serial SERIAL` | Target a specific device. Required when more than one device is attached. Find serials with `adb devices`. |
 | `--jobs N` | Concurrent transfer streams, default 2. USB is usually the bottleneck, so higher values rarely help. |
 | `--only A,B` | Comma separated folders to back up, for example `--only DCIM,Pictures`. Accepts nested paths such as `Android/media`. |
@@ -203,7 +239,7 @@ little has changed.
 To confirm a run reused rather than re-downloaded, check any of these:
 
 ```bash
-cd ~/Downloads/Android\ Backups
+cd ~/Documents/Android\ Backups
 
 # the run summary said so
 grep -E "Transferred|Hardlinked|Copied" */backup.log
@@ -257,7 +293,7 @@ from a backup anyway.
 To see it yourself, the link count is how many names point at the contents:
 
 ```bash
-stat -f "links=%l  %N" ~/Downloads/Android\ Backups/*/DCIM/Camera/*.jpg | head
+stat -f "links=%l  %N" ~/Documents/Android\ Backups/*/DCIM/Camera/*.jpg | head
 ```
 
 `links=1` means one name, `links=3` means three snapshots share that file.
@@ -290,7 +326,7 @@ A plain `cp -R` of the backup root expands every hardlink into a real copy, so
 keeping the sharing intact:
 
 ```bash
-rsync -aH ~/Downloads/Android\ Backups/ /Volumes/Other/Android\ Backups/
+rsync -aH ~/Documents/Android\ Backups/ /Volumes/Other/Android\ Backups/
 ```
 
 The `-H` is what preserves hardlinks. Without it you get the expansion.
@@ -418,6 +454,8 @@ src/
     transfer.py        streaming tar transfer and extraction
     progress.py        live progress bar and logging
     formatting.py      size and duration rendering
+    paths.py           where the default backup folder lives, per platform
+    platform_hints.py  cloud sync and free space advice
     config.py          folder list, timeouts, tunables
     errors.py          error type
 ```

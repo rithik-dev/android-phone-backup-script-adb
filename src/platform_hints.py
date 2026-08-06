@@ -1,10 +1,40 @@
-"""Platform specific advice appended to error messages."""
+"""Platform specific advice shown alongside errors and destinations."""
 
+import os
 import subprocess
 import sys
 
 # Ask tmutil to reclaim up to 200 GB, at the most aggressive urgency.
 THIN_COMMAND = "tmutil thinlocalsnapshots / 214748364800 4"
+
+# Path fragments that mean a cloud service will try to upload whatever lands
+# there. A large backup into one of these is almost never what someone wants.
+CLOUD_MARKERS = {
+    "Mobile Documents": "iCloud Drive",
+    "CloudStorage": "a cloud drive",
+    "OneDrive": "OneDrive",
+    "Dropbox": "Dropbox",
+    "Google Drive": "Google Drive",
+    "GoogleDrive": "Google Drive",
+}
+
+
+def cloud_sync_warning(path):
+    """Warn when the destination sits inside a folder that syncs to the cloud.
+
+    Documents is the usual default on every platform and is also the folder
+    most likely to be synced, so this is worth checking before writing tens of
+    gigabytes into it.
+    """
+    resolved = os.path.realpath(os.path.expanduser(path))
+    parts = resolved.split(os.sep)
+    for marker, service in CLOUD_MARKERS.items():
+        if marker in parts:
+            return ("Warning     : this destination is inside %s, which will "
+                    "try to upload\n              every backed up file. Pass "
+                    "--dest to use a local folder or an\n              external "
+                    "drive instead." % service)
+    return ""
 
 
 def local_snapshot_count():

@@ -6,20 +6,20 @@ import sys
 
 from .config import DEFAULT_JOBS
 from .errors import BackupError
+from .paths import default_backup_root
 from .runner import BackupRunner
-
-DEFAULT_DEST = os.path.join(os.path.expanduser("~"), "Downloads",
-                            "Android Backups")
 
 
 def parse_args(argv=None):
+    fallback = os.environ.get("ANDROID_BACKUP_DEST") or default_backup_root()
     parser = argparse.ArgumentParser(
         prog="backup",
         description="Fast incremental Android media backup over ADB.")
     parser.add_argument(
-        "--dest", default=os.environ.get("ANDROID_BACKUP_DEST") or DEFAULT_DEST,
+        "--dest", default=fallback,
         help="Backup root. Each run creates a timestamped snapshot inside it. "
-             "Defaults to $ANDROID_BACKUP_DEST, else ~/Downloads/Android Backups.")
+             "Defaults to $ANDROID_BACKUP_DEST, else the 'Android Backups' "
+             "folder in your documents directory (currently %s)." % fallback)
     parser.add_argument(
         "--serial",
         help="Target a specific device serial. Required when more than one "

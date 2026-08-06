@@ -10,7 +10,7 @@ from .adb import Adb, require_adb, select_device
 from .config import DEFAULT_ROOTS
 from .errors import BackupError
 from .formatting import human_bytes, human_time
-from .platform_hints import free_space_hint
+from .platform_hints import cloud_sync_warning, free_space_hint
 from .progress import Progress
 from .runlog import RunLog
 from .scan import DeviceScanner
@@ -42,7 +42,6 @@ class BackupRunner:
             print("Nothing to back up.")
             return EXIT_OK
 
-        self.store.create()
         previous = None if self.options.full else self.store.latest_complete()
         manifest = previous.load_manifest() if previous else None
         if previous and manifest is None:
@@ -57,10 +56,11 @@ class BackupRunner:
 
         self._report_plan(dest, previous, plan)
         if self.options.dry_run:
-            # Nothing has been written yet, so there is nothing to undo.
+            # Nothing exists on disk yet, not even the backup root.
             print("\nDry run, nothing transferred.")
             return EXIT_OK
 
+        self.store.create()
         self._check_space(plan)
         dest.create()
         dest.mark_incomplete(timestamp)
@@ -105,6 +105,9 @@ class BackupRunner:
         if previous:
             print("Previous    : %s" % previous.name)
         print("Destination : %s" % dest.path)
+        cloud = cloud_sync_warning(dest.path)
+        if cloud:
+            print(cloud)
         print("To transfer : %d files, %s"
               % (len(plan.to_fetch), human_bytes(plan.fetch_bytes)))
         if plan.to_link:
