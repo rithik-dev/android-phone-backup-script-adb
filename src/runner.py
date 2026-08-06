@@ -10,6 +10,7 @@ from .adb import Adb, require_adb, select_device
 from .config import DEFAULT_ROOTS
 from .errors import BackupError
 from .formatting import human_bytes, human_time
+from .platform_hints import free_space_hint
 from .progress import Progress
 from .scan import DeviceScanner
 from .snapshot import BackupPlan, SnapshotStore, hardlink_files
@@ -119,9 +120,9 @@ class BackupRunner:
                 "Not enough free space at %s\n"
                 "  need : %s\n"
                 "  free : %s\n"
-                "Free up space, or pass --dest pointing at a larger volume."
+                "Free up space, or pass --dest pointing at a larger volume.%s"
                 % (self.store.root, human_bytes(plan.fetch_bytes),
-                   human_bytes(free)))
+                   human_bytes(free), free_space_hint()))
         print("Free space  : %s" % human_bytes(free))
         print("Streams     : %d\n" % max(1, self.options.jobs))
 

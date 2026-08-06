@@ -289,5 +289,20 @@ you want with `--serial`.
 **"Not enough free space."** The message shows exactly how much is needed
 against how much is free. Point `--dest` at a larger volume.
 
+On macOS the reported figure is often far smaller than what Finder shows, and
+the error explains why when that applies. Finder counts purgeable space as
+available, mostly Time Machine local snapshots holding data on the internal
+disk. This tool uses `statvfs`, the same measure as `df`, which counts only
+blocks that are free right now. macOS does purge snapshots under pressure, but
+it does so on demand and with a lag, so a long sustained write can outrun it and
+fail partway rather than being refused up front. To reclaim that space
+deliberately, which deletes local snapshots but leaves backups on an external
+Time Machine drive untouched:
+
+```bash
+tmutil thinlocalsnapshots / 214748364800 4
+df -h /System/Volumes/Data
+```
+
 **The transfer stalls repeatedly.** Keep the phone unlocked and awake during a
 large backup, and try a different USB port or cable.
