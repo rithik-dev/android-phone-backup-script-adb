@@ -77,9 +77,45 @@ python3 index.py --dest "/Volumes/MyDrive/Android Backups"
 
 Two files are written into every snapshot:
 
-- `backup.log` lists every file, one per line, tagged `FETCH`, `LINK` or `FAIL`
-- `.backup-manifest.json` records each file's size and modification time, and is
-  what the next run compares against
+- `backup.log`, a timestamped record of every file
+- `.backup-manifest.json`, each file's size and modification time, which is what
+  the next run compares against
+
+The log is bracketed by a header and footer in IST, and every line carries the
+time it happened:
+
+```
+# ====================================================================
+# Android backup started
+# Device    : R5CT21KF3TD
+# Snapshot  : Android_Backup_20260806_104249
+# Started   : Thu 06 Aug 2026, 10:42:49 IST
+# ====================================================================
+
+10:42:49  FETCH  Documents/Aadhar.pdf	1130377
+10:42:50  LINK   Ringtones/Bella Ciao Ringtone.mp3	979244
+
+# ====================================================================
+# Finished   : Thu 06 Aug 2026, 10:42:50 IST
+# Duration   : 00:01
+# Result     : complete
+# Transferred: 15.6 MB (12.4 MB/s average)
+# Reused     : 0 files, 0 B
+# Failed     : 0 files
+# ====================================================================
+```
+
+The tag on each line tells you what actually happened:
+
+| Tag | Meaning |
+| --- | --- |
+| `FETCH` | Transferred from the device |
+| `LINK` | Hardlinked from the previous snapshot, nothing transferred |
+| `FAIL` | Did not arrive, with the reason |
+
+A resumed run appends rather than overwriting, so a single log can hold several
+attempts in order, each with its own header and footer. Interrupted attempts get
+a footer too, recorded as `interrupted, snapshot incomplete`.
 
 ## Options
 
@@ -130,12 +166,36 @@ The first run transfers everything. Every run after that:
 4. Transfers only the files on that list.
 5. Writes a fresh manifest describing the complete snapshot.
 
-Because unchanged files are hardlinked rather than copied, a snapshot containing
-80 GB of photos can cost only a few megabytes of new disk space if little has
-changed. Each snapshot is still a full, independent tree. You can browse or copy
-any one of them without needing the others, and deleting an old snapshot never
+**Every snapshot contains every file.** This is deliberate, and it is what you
+should expect to see. Two backups taken minutes apart will look identical in
+Finder, because each one is a full, independent tree. You can browse or copy any
+one of them without needing the others, and deleting an old snapshot never
 damages a newer one, since the data survives as long as any snapshot references
 it.
+
+What changes between runs is how much was *transferred*, not how much is
+present. Because unchanged files are hardlinked rather than copied, a snapshot
+containing 80 GB of photos can cost only a few megabytes of new disk space if
+little has changed.
+
+To confirm a run reused rather than re-downloaded, check any of these:
+
+```bash
+cd ~/Downloads/Android\ Backups
+
+# the run summary said so
+grep -E "Transferred|Reused" */backup.log
+
+# every line tagged LINK means hardlinked, FETCH means transferred
+grep -c LINK  Android_Backup_*/backup.log
+
+# apparent size versus real size on disk
+du -Ash .    # counts every snapshot separately
+du -sh  .    # what the snapshots actually occupy together
+```
+
+If the second number is close to the first divided by the number of snapshots,
+hardlinking is working.
 
 Modification times are compared with a two second tolerance. Tar stores whole
 seconds while `find` reports nanoseconds, so an exact comparison would flag every

@@ -12,6 +12,7 @@ from .errors import BackupError
 from .formatting import human_bytes, human_time
 from .platform_hints import free_space_hint
 from .progress import Progress
+from .runlog import RunLog
 from .scan import DeviceScanner
 from .snapshot import BackupPlan, SnapshotStore, hardlink_files
 from .transfer import TransferEngine
@@ -127,8 +128,8 @@ class BackupRunner:
         print("Streams     : %d\n" % max(1, self.options.jobs))
 
     def _execute(self, dest, resumed, scan, plan, timestamp):
-        log = open(dest.log_path, "a" if resumed else "w", encoding="utf-8")
-        log.write("# backup of %s started %s\n" % (self.serial, timestamp))
+        log = RunLog(dest.log_path, append=resumed)
+        log.start(self.serial, dest.name, resumed=resumed)
 
         progress = Progress(
             total_files=plan.total_files,
@@ -161,21 +162,29 @@ class BackupRunner:
                              time.time() - started)
 
         if cancel.is_set():
+            outcome = "interrupted, snapshot incomplete"
+        elif failed:
+            outcome = "%d files failed, snapshot incomplete" % len(failed)
+        else:
+            outcome = "complete"
+        log.finish(outcome, progress.done_bytes - progress.linked_bytes,
+                   progress.linked_files, progress.linked_bytes, len(failed))
+        log.close()
+
+        if cancel.is_set():
             print("\nInterrupted. Re-run the same command to resume, files "
                   "already transferred are skipped.")
-            log.close()
             return EXIT_INTERRUPTED
 
         if failed:
             print("\nFinished with %d failures. The snapshot stays marked "
                   "incomplete so the next run retries them." % len(failed))
-        else:
-            dest.write_manifest(scan.files, self.serial)
-            dest.mark_complete()
-            print("\nBackup complete.")
+            return EXIT_FAILURES
 
-        log.close()
-        return EXIT_FAILURES if failed else EXIT_OK
+        dest.write_manifest(scan.files, self.serial)
+        dest.mark_complete()
+        print("\nBackup complete.")
+        return EXIT_OK
 
     def _report_summary(self, dest, scan, progress, failed, elapsed):
         totals = scan.folder_totals()

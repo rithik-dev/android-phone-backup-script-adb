@@ -97,13 +97,13 @@ class Progress:
             self.linked_bytes += remote.size
             self._credit_folder(remote)
             self.current = remote.relpath
-        self._log("LINK ", remote)
+        self._log("LINK", remote)
         self._announce_if_folder_done(remote.root)
 
     def file_failed(self, relpath, reason):
         self.emit("  ! %s  (%s)" % (relpath, reason))
         if self.log:
-            self.log.write("FAIL  %s\t%s\n" % (relpath, reason))
+            self.log.failure(relpath, reason)
 
     def emit(self, text):
         """Print a durable line without leaving status line residue behind."""
@@ -122,7 +122,7 @@ class Progress:
 
     def _log(self, tag, remote):
         if self.log:
-            self.log.write("%s %s\t%d\n" % (tag, remote.relpath, remote.size))
+            self.log.record(tag, remote.relpath, remote.size)
 
     def _announce_if_folder_done(self, root):
         with self.lock:
