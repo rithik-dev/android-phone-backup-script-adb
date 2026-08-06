@@ -37,11 +37,29 @@ From a terminal:
 python3 index.py
 ```
 
-From VS Code, pick one of the configurations in the Run and Debug panel. They
-all use the integrated terminal, which the live progress bar needs. The
-configurations require the Python extension. If your VS Code predates the
-debugpy adapter, change `"type": "debugpy"` to `"type": "python"` in
-`.vscode/launch.json`.
+From VS Code, pick one of the configurations in the Run and Debug panel:
+
+| Configuration | Runs |
+| --- | --- |
+| Backup: all folders (incremental) | the normal backup, no flags |
+| Backup: force re-transfer of everything | `--full` |
+| Backup: dry run | `--dry-run` |
+| Backup: camera only, verbose | `--only DCIM --verbose` |
+| Backup: single stream (slow link) | `--jobs 1` |
+| Backup: prompt for destination | asks, then `--dest` |
+| Backup: prompt for folders | asks, then `--only` |
+
+Incremental reuse is the default everywhere, including the first entry, which
+passes no flags at all. Only the `--full` configuration turns it off.
+
+They all use the integrated terminal, which the live progress bar needs, and
+require the Python extension. If your VS Code predates the debugpy adapter,
+change `"type": "debugpy"` to `"type": "python"` in `.vscode/launch.json`.
+
+Stopping a run with the red stop button kills the process outright rather than
+interrupting it, so no footer is written to the log. That is still safe: the
+snapshot stays marked incomplete and the next run resumes into it. Press Ctrl+C
+in the terminal instead for a clean stop with a summary.
 
 Before a first big run, see what would happen without transferring anything:
 

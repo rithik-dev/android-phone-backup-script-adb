@@ -2,13 +2,22 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Backup: full run",
+      "name": "Backup: all folders (incremental)",
       "type": "debugpy",
       "request": "launch",
       "program": "${workspaceFolder}/index.py",
       "cwd": "${workspaceFolder}",
       "console": "integratedTerminal",
       "justMyCode": true
+    },
+    {
+      "name": "Backup: force re-transfer of everything (--full)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/index.py",
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "args": ["--full"]
     },
     {
       "name": "Backup: dry run",
