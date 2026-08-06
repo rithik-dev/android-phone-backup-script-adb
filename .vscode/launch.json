@@ -1,0 +1,73 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Backup: full run",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/index.py",
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "justMyCode": true
+    },
+    {
+      "name": "Backup: dry run",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/index.py",
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "args": ["--dry-run"]
+    },
+    {
+      "name": "Backup: camera only, verbose",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/index.py",
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "args": ["--only", "DCIM", "--verbose"]
+    },
+    {
+      "name": "Backup: single stream (slow link)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/index.py",
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "args": ["--jobs", "1"]
+    },
+    {
+      "name": "Backup: prompt for destination",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/index.py",
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "args": ["--dest", "${input:destination}"]
+    },
+    {
+      "name": "Backup: prompt for folders",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/index.py",
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "args": ["--only", "${input:folders}"]
+    }
+  ],
+  "inputs": [
+    {
+      "id": "destination",
+      "type": "promptString",
+      "description": "Backup root directory",
+      "default": "/Volumes/"
+    },
+    {
+      "id": "folders",
+      "type": "promptString",
+      "description": "Comma separated folders to back up",
+      "default": "DCIM,Pictures"
+    }
+  ]
+}

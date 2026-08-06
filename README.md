@@ -1,0 +1,293 @@
+# Android Phone Backup
+
+Fast incremental backup of an Android phone's media folders to a Mac or Linux
+machine over ADB.
+
+Files are streamed off the device as a single tar archive per batch and
+extracted on the fly. Nothing is ever written to the phone, so a backup needs no
+free space on the device, and the per file ADB round trip that makes `adb pull`
+slow on large folders is paid once per batch instead of once per file.
+
+Repeat runs only transfer what changed. Everything else is hardlinked from the
+previous snapshot, so each backup is a complete browsable tree that costs almost
+no extra disk space.
+
+## Requirements
+
+- Python 3.8 or newer (macOS ships Python 3.9, which is enough)
+- Android platform tools on PATH: `brew install --cask android-platform-tools`
+- USB debugging enabled on the phone, with the USB mode set to file transfer
+
+## Quick start
+
+Double click **`Backup Phone.command`** in Finder. It opens a Terminal window,
+runs the backup, and waits for a keypress before closing so you can read the
+summary.
+
+To send backups somewhere other than the default, open that file in any text
+editor and set the destination near the top:
+
+```bash
+DEST="/Volumes/MyDrive/Android Backups"
+```
+
+From a terminal:
+
+```bash
+python3 index.py
+```
+
+From VS Code, pick one of the configurations in the Run and Debug panel. They
+all use the integrated terminal, which the live progress bar needs. The
+configurations require the Python extension. If your VS Code predates the
+debugpy adapter, change `"type": "debugpy"` to `"type": "python"` in
+`.vscode/launch.json`.
+
+Before a first big run, see what would happen without transferring anything:
+
+```bash
+python3 index.py --dry-run
+```
+
+## Where backups are stored
+
+By default:
+
+```
+~/Downloads/Android Backups/
+    Android_Backup_20260806_094547/
+        DCIM/Camera/20250726_172955.jpg
+        Android/media/com.whatsapp/...
+        backup.log
+        .backup-manifest.json
+    Android_Backup_20260807_083012/
+        ...
+```
+
+Each run creates its own timestamped snapshot. The tree inside mirrors the
+phone's `/sdcard` exactly, so `/sdcard/DCIM/Camera/x.jpg` lands at
+`DCIM/Camera/x.jpg` and `/sdcard/Android/media/...` keeps its full path.
+
+Change the destination with `--dest`, or set `ANDROID_BACKUP_DEST` in your
+environment to change the default permanently:
+
+```bash
+python3 index.py --dest "/Volumes/MyDrive/Android Backups"
+```
+
+Two files are written into every snapshot:
+
+- `backup.log` lists every file, one per line, tagged `FETCH`, `LINK` or `FAIL`
+- `.backup-manifest.json` records each file's size and modification time, and is
+  what the next run compares against
+
+## Options
+
+| Option | Description |
+| --- | --- |
+| `--dest PATH` | Backup root. Each run creates a timestamped snapshot inside it. Defaults to `$ANDROID_BACKUP_DEST`, otherwise `~/Downloads/Android Backups`. |
+| `--serial SERIAL` | Target a specific device. Required when more than one device is attached. Find serials with `adb devices`. |
+| `--jobs N` | Concurrent transfer streams, default 2. USB is usually the bottleneck, so higher values rarely help. |
+| `--only A,B` | Comma separated folders to back up, for example `--only DCIM,Pictures`. Accepts nested paths such as `Android/media`. |
+| `--full` | Re-transfer everything instead of reusing the previous snapshot. Also starts a new snapshot rather than resuming. |
+| `--no-resume` | Start a new snapshot instead of resuming an interrupted one. |
+| `--dry-run` | Scan and report what would transfer, then exit without writing anything. |
+| `--verbose` | Echo every transferred file to the terminal. Files are always recorded in `backup.log` regardless. |
+| `--no-progress` | Disable the live status line, for piping output to a file. |
+
+## What gets backed up
+
+These folders, when they exist on the device:
+
+`DCIM`, `Pictures`, `Movies`, `Music`, `Documents`, `Download`, `Recordings`,
+`Alarms`, `Notifications`, `Ringtones`, `Podcasts`, `Audiobooks`,
+`Android/media`
+
+`Android/media` is where messaging apps keep attachments, so WhatsApp, Signal
+and Telegram media are included. Folders that do not exist are listed as
+"Not present" and skipped without failing the run.
+
+`Android/data` and `Android/obb` are deliberately excluded. The ADB shell user
+cannot read them on modern Android, so walking them would only produce errors.
+
+This is a media backup. It does not include SMS, call logs, contacts or app
+APKs. Those need separate tooling, since `adb backup` is deprecated and disabled
+on Android 12 and newer.
+
+To change the folder list permanently, edit `DEFAULT_ROOTS` in
+`src/config.py`.
+
+## How incremental backups work
+
+The first run transfers everything. Every run after that:
+
+1. Scans the device once with a single `find`, collecting each file's path, size
+   and modification time.
+2. Loads `.backup-manifest.json` from the most recent completed snapshot.
+3. For each file, compares size and modification time against that manifest.
+   - Unchanged: hardlinked from the previous snapshot, no transfer.
+   - New or changed: added to the transfer list.
+4. Transfers only the files on that list.
+5. Writes a fresh manifest describing the complete snapshot.
+
+Because unchanged files are hardlinked rather than copied, a snapshot containing
+80 GB of photos can cost only a few megabytes of new disk space if little has
+changed. Each snapshot is still a full, independent tree. You can browse or copy
+any one of them without needing the others, and deleting an old snapshot never
+damages a newer one, since the data survives as long as any snapshot references
+it.
+
+Modification times are compared with a two second tolerance. Tar stores whole
+seconds while `find` reports nanoseconds, so an exact comparison would flag every
+file as changed on the second run.
+
+If the previous manifest is missing or corrupt, the run falls back to a full
+transfer and says so.
+
+## If the device disconnects or the run stops
+
+The snapshot is marked incomplete the moment it is created, and only marked
+complete after every file has arrived. That marker drives recovery.
+
+**Press Ctrl+C.** The current batch stops, the summary still prints, and the
+snapshot stays marked incomplete. Exit status is 130.
+
+**Unplug the cable, or the phone sleeps or locks.** Reads stop producing data.
+A watchdog kills the stalled transfer after 120 seconds so the run cannot hang
+forever. The affected files are reported as failures and the snapshot stays
+incomplete.
+
+**Either way, run the same command again.** It finds the incomplete snapshot,
+resumes into it rather than starting a new one, skips every file already on
+disk, and transfers only what is missing. Nothing is re-downloaded.
+
+Short control commands have their own timeout, so a wedged ADB server produces a
+clear error instead of a hang. If that happens, `adb kill-server` clears it.
+
+Use `--no-resume` if you would rather abandon an incomplete snapshot and start
+fresh.
+
+## Edge cases handled
+
+- **Free space is checked on both ends before starting.** The transfer is
+  streamed, so the phone needs no free space at all. The destination volume is
+  checked against the exact byte count from the scan, and the run refuses to
+  start rather than filling the disk.
+- **Filenames with spaces, quotes, ampersands or newlines.** Every remote path
+  is shell quoted, and the scan is NUL delimited rather than newline delimited.
+- **Two runs started in the same second.** Snapshot names carry a numeric
+  suffix when needed, so runs cannot silently share a directory.
+- **More than one device attached.** The run stops and lists the serials instead
+  of guessing. Every ADB command is pinned to the chosen serial, so a device
+  connected midway through cannot affect a run in progress.
+- **Unauthorized device.** Detected before any transfer, with instructions to
+  accept the prompt on the phone.
+- **Archive safety.** The archive is built by the device, so every member is
+  checked for absolute paths and directory traversal before extraction. Python
+  3.9 has no built in tarfile extraction filter, so this is done explicitly.
+- **Symlinks, sockets and device nodes** in the archive are skipped.
+- **Concurrent extraction.** Destination directories are created once up front,
+  because tarfile creates parent directories with a check then create sequence
+  that races when several batches extract at the same time.
+- **Snapshots on a different filesystem from the previous one.** Hardlinking
+  falls back to a copy, and then to a normal transfer if that also fails.
+- **Partial failures.** Files that fail are listed individually, the snapshot
+  stays incomplete, and the next run retries exactly those files.
+- **Unreadable scan entries** are counted and reported rather than silently
+  dropped.
+- **Output redirected to a file.** The live status line is disabled
+  automatically when stdout is not a terminal.
+
+## Progress output
+
+```
+Device      : R5CT21KF3TD
+Scan        : 10875 files, 82.1 GB in 00:05
+Not present : Alarms, Notifications, Podcasts, Audiobooks
+Previous    : Android_Backup_20260805_211540
+Destination : /Volumes/MyDrive/Android Backups/Android_Backup_20260806_094547
+To transfer : 214 files, 3.2 GB
+Reusing     : 10661 files, 78.9 GB (hardlinked from previous snapshot)
+Free space  : 412.8 GB
+Streams     : 2
+
+  Documents          done  6 files  9.6 MB  (00:02 elapsed)
+  ####################----   84.0%  2.7 GB / 3.2 GB  38.6 MB/s  01:11 elapsed  ETA 00:13  [198/214]  ...Camera/20250726_172955.jpg
+```
+
+The percentage tracks bytes rather than file count, since a library with 3 GB
+videos next to 30 KB thumbnails makes a file count meaningless. It also advances
+while a single large file is still streaming, so the bar does not appear frozen
+during a big video. Each folder prints a line as it completes, and a per folder
+table is printed at the end.
+
+## Performance notes
+
+Measured on a Galaxy S22 Ultra over USB 2.0, transferring 1259 small files
+totalling 39.4 MB:
+
+| Method | Time |
+| --- | --- |
+| `adb pull -a` | 6.34s |
+| tar on the device, then pull the archive | 3.13s |
+| streamed tar, used here | 2.97s |
+
+Writing a tar on the phone first is not only slower, it also requires free space
+on the device equal to the folder being backed up, which fails outright on a
+nearly full phone.
+
+**The cable usually matters more than any of this.** Sustained throughput on
+that phone measured 39.1 MB/s, which is USB 2.0 speed. Many phones ship with a
+USB 2.0 cable in the box. On a USB 3 cable the same hardware runs several times
+faster. If a large backup feels slow, check the cable before anything else. The
+average throughput printed in the summary tells you what you are getting.
+
+`--jobs` has a modest effect on folders full of small files and almost none on
+large videos, where the USB link is already saturated. The default of 2 is a
+reasonable compromise.
+
+## Project layout
+
+```
+index.py               entry point, run this
+Backup Phone.command   double clickable launcher for Finder
+src/
+    cli.py             argument parsing
+    runner.py          orchestrates one backup run
+    adb.py             ADB process handling and device selection
+    scan.py            enumerating files on the device
+    snapshot.py        snapshot directories, manifests, incremental plan
+    transfer.py        streaming tar transfer and extraction
+    progress.py        live progress bar and logging
+    formatting.py      size and duration rendering
+    config.py          folder list, timeouts, tunables
+    errors.py          error type
+```
+
+## Exit statuses
+
+| Status | Meaning |
+| --- | --- |
+| 0 | Backup completed, snapshot marked complete |
+| 1 | Some files failed, or a fatal error such as insufficient space |
+| 130 | Interrupted with Ctrl+C, re-run to resume |
+
+## Troubleshooting
+
+**"adb was not found on PATH."** Install the platform tools with
+`brew install --cask android-platform-tools`.
+
+**"Device is unauthorized."** Unlock the phone and tap Allow on the USB
+debugging prompt. Tick "always allow" to avoid repeating it.
+
+**"No devices found."** Check the cable, enable USB debugging in developer
+options, and set the USB mode to file transfer rather than charging only.
+
+**"More than one device is connected."** Run `adb devices` and pass the serial
+you want with `--serial`.
+
+**"Not enough free space."** The message shows exactly how much is needed
+against how much is free. Point `--dest` at a larger volume.
+
+**The transfer stalls repeatedly.** Keep the phone unlocked and awake during a
+large backup, and try a different USB port or cable.
